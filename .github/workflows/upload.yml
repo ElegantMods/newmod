@@ -25,7 +25,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
-        run: pip install --upgrade yt-dlp telethon
+        run: |
+          pip install --upgrade telethon
+          pip install --upgrade --pre "yt-dlp[default]"
 
       - name: Install Deno (JS runtime for yt-dlp)
         uses: denoland/setup-deno@v2
@@ -36,6 +38,12 @@ jobs:
         env:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: printf '%s\n' "$YT_COOKIES" > cookies.txt
+
+      - name: Diagnose cookies file (no secret content printed)
+        run: |
+          echo "File size (bytes): $(wc -c < cookies.txt)"
+          echo "Line count: $(wc -l < cookies.txt)"
+          echo "First line starts with '# ': $(head -c 2 cookies.txt | grep -c '^# ' || true)"
 
       - name: Verify secrets are set (does not print values)
         env:
