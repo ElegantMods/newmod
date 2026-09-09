@@ -50,13 +50,30 @@ jobs:
       - name: Write cookies file
         env:
           WEB_COOKIES: ${{ secrets.WEB_COOKIES }}
-        run: printf '%s\n' "$WEB_COOKIES" > cookies.txt
+        run: |
+          printf '%s\n' "$WEB_COOKIES" > cookies_raw.txt
+          # Strip a UTF-8 BOM if present, normalize CRLF to LF, drop leading blank lines
+          sed -i '1s/^\xEF\xBB\xBF//' cookies_raw.txt
+          sed -i 's/\r$//' cookies_raw.txt
+          sed -i '/./,$!d' cookies_raw.txt
+          # Ensure the file starts with the required Netscape cookies header
+          if ! head -n 1 cookies_raw.txt | grep -q '^# \(Netscape\|HTTP Cookie File\)'; then
+            { echo "# Netscape HTTP Cookie File"; cat cookies_raw.txt; } > cookies.txt
+          else
+            mv cookies_raw.txt cookies.txt
+          fi
+          rm -f cookies_raw.txt
 
       - name: Diagnose cookies file (no secret content printed)
         run: |
           echo "File size (bytes): $(wc -c < cookies.txt)"
           echo "Line count: $(wc -l < cookies.txt)"
-          echo "First line starts with '# ': $(head -c 2 cookies.txt | grep -c '^# ' || true)"
+          echo "First line (structure only, values masked):"
+          head -n 1 cookies.txt | sed -E 's/[A-Za-z0-9_%.-]{6,}/***/g'
+          echo "Detected line endings:"
+          file cookies.txt
+          echo "Has CRLF (Windows) line endings: $(grep -c $'\r' cookies.txt || true)"
+          echo "Starts with UTF-8 BOM: $(head -c3 cookies.txt | xxd -p)"
 
       - name: Verify secrets are set (does not print values)
         env:
