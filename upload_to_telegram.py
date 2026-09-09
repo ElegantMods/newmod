@@ -32,7 +32,7 @@ cookies_file = os.environ.get("YT_COOKIES_FILE", "")
 YTDLP_EXTRA_ARGS = ""
 if cookies_file and os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 0:
     YTDLP_EXTRA_ARGS += f' --cookies "{cookies_file}"'
-YTDLP_EXTRA_ARGS += " --js-runtimes deno"
+YTDLP_EXTRA_ARGS += " --js-runtimes deno --remote-components ejs:github"
 
 
 def download_youtube_thumbnail(url):
