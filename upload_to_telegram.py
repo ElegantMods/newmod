@@ -26,6 +26,14 @@ session_string = os.environ["TELEGRAM_SESSION"]
 # Set MAX_SIZE_GB env var to "3.9" if you have Telegram Premium, else leave default 1.9
 MAX_SIZE_BYTES = float(os.environ.get("MAX_SIZE_GB", "1.9")) * 1024 * 1024 * 1024
 
+# Optional path to a cookies.txt file (Netscape format) to avoid YouTube's
+# "sign in to confirm you're not a bot" block on datacenter IPs.
+cookies_file = os.environ.get("YT_COOKIES_FILE", "")
+YTDLP_EXTRA_ARGS = ""
+if cookies_file and os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 0:
+    YTDLP_EXTRA_ARGS += f' --cookies "{cookies_file}"'
+YTDLP_EXTRA_ARGS += " --js-runtimes deno"
+
 
 def download_youtube_thumbnail(url):
     try:
@@ -113,7 +121,7 @@ async def main():
             format_str = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]"
             os.system(
                 f'yt-dlp -q --progress -f "{format_str}" --merge-output-format mp4 '
-                f'-o "{out_template}" "{video_url}"'
+                f'{YTDLP_EXTRA_ARGS} -o "{out_template}" "{video_url}"'
             )
 
             found = glob.glob(f"*_{q}p.mp4")
