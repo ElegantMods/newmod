@@ -1,5 +1,7 @@
 # Web Video to Telegram Uploader (GitHub Actions)
 
+[نسخه فارسی](https://github.com/ElegantMods/newmod/blob/main/README.FA.MD)
+
 This repository downloads an online video at whatever quality (or qualities)
 you choose, and uploads it to your own Telegram account's "Saved Messages" --
 all running automatically on GitHub's servers, so your own computer does not
