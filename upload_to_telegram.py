@@ -23,6 +23,21 @@ api_id = int(os.environ["TELEGRAM_API_ID"])
 api_hash = os.environ["TELEGRAM_API_HASH"]
 session_string = os.environ["TELEGRAM_SESSION"]
 
+ALLOWED_QUALITIES = {360, 480, 720, 1080, 2160}
+_raw_qualities = os.environ.get("QUALITIES", "1080")
+qualities = []
+for part in _raw_qualities.split(","):
+    part = part.strip()
+    if not part:
+        continue
+    q = int(part)
+    if q not in ALLOWED_QUALITIES:
+        raise ValueError(f"Unsupported quality '{q}'. Choose from {sorted(ALLOWED_QUALITIES)}.")
+    qualities.append(q)
+if not qualities:
+    raise ValueError("No valid qualities provided in QUALITIES.")
+qualities = sorted(set(qualities))
+
 # Set MAX_SIZE_GB env var to "3.9" if you have Telegram Premium, else leave default 1.9
 MAX_SIZE_BYTES = float(os.environ.get("MAX_SIZE_GB", "1.9")) * 1024 * 1024 * 1024
 
@@ -114,9 +129,9 @@ async def main():
     async with TelegramClient(StringSession(session_string), api_id, api_hash) as client:
         print("Connected.")
 
-        print("\nDownloading 1080p and preparing album upload...")
+        print(f"\nDownloading qualities {qualities} and preparing album upload...")
         album_files = []
-        for q in [1080]:
+        for q in qualities:
             out_template = f"%(title)s_{q}p.mp4"
             format_str = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]"
             os.system(
