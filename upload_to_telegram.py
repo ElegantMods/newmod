@@ -52,6 +52,7 @@ def download_video_thumbnail(url, extra_args=""):
     # Uses yt-dlp's own thumbnail downloader, which works across whichever
     # site yt-dlp is downloading from, rather than assuming a specific site's
     # URL layout.
+    print("Fetching video thumbnail...")
     try:
         for f in glob.glob("thumb.*"):
             os.remove(f)
@@ -61,8 +62,13 @@ def download_video_thumbnail(url, extra_args=""):
         )
         subprocess.run(cmd, shell=True)
         found = glob.glob("thumb.*")
+        if found:
+            print(f"Thumbnail saved: {found[0]}")
+        else:
+            print("No thumbnail available for this video (continuing without one).")
         return found[0] if found else None
     except Exception:
+        print("Thumbnail fetch failed (continuing without one).")
         return None
 
 
@@ -130,21 +136,42 @@ async def main():
 
         print(f"\nDownloading qualities {qualities} and preparing album upload...")
         album_files = []
+        seen_heights = set()
         for q in qualities:
             out_template = f"%(title)s_{q}p.mp4"
             format_str = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]"
+            print(f"\nRequesting quality <= {q}p...")
             os.system(
                 f'yt-dlp -q --progress -f "{format_str}" --merge-output-format mp4 '
                 f'{DOWNLOADER_EXTRA_ARGS} -o "{out_template}" "{video_url}"'
             )
 
             found = glob.glob(f"*_{q}p.mp4")
-            if found:
-                file_path = found[0]
-                if os.path.getsize(file_path) > MAX_SIZE_BYTES:
-                    album_files.extend(split_video(file_path))
-                else:
-                    album_files.append(file_path)
+            if not found:
+                print(f"No file produced for requested quality {q}p (skipping).")
+                continue
+
+            file_path = found[0]
+            _, actual_w, actual_h = get_video_meta(file_path)
+
+            if actual_h in seen_heights:
+                # yt-dlp fell back to a resolution we already have from a
+                # lower requested quality (the source has no higher stream
+                # available) — this is a duplicate, not a new quality.
+                print(
+                    f"Requested {q}p resolved to {actual_h}p, which was already "
+                    f"downloaded for a lower quality — skipping duplicate."
+                )
+                os.remove(file_path)
+                continue
+
+            seen_heights.add(actual_h)
+            print(f"Requested {q}p resolved to actual {actual_h}p — keeping.")
+
+            if os.path.getsize(file_path) > MAX_SIZE_BYTES:
+                album_files.extend(split_video(file_path))
+            else:
+                album_files.append(file_path)
 
         album_media = []
         if album_files:
@@ -159,11 +186,15 @@ async def main():
                     progress_callback=create_progress_bar(raw_name, f"part {idx}/{len(album_files)}"),
                 )
 
+                duration, width, height = get_video_meta(file_path)
                 file_name_attribute = DocumentAttributeFilename(file_name=raw_name)
+                video_attribute = DocumentAttributeVideo(
+                    duration=duration, w=width, h=height, supports_streaming=True
+                )
                 media_doc = InputMediaUploadedDocument(
                     file=uploaded_file,
                     mime_type="video/mp4",
-                    attributes=[file_name_attribute],
+                    attributes=[video_attribute, file_name_attribute],
                     thumb=uploaded_thumb,
                 )
                 album_media.append(media_doc)
