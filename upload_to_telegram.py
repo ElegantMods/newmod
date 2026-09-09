@@ -5,6 +5,7 @@ import time
 import math
 import logging
 import subprocess
+import urllib.request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.types import (
@@ -48,27 +49,24 @@ if cookies_file and os.path.exists(cookies_file) and os.path.getsize(cookies_fil
 DOWNLOADER_EXTRA_ARGS += " --js-runtimes deno --remote-components ejs:github"
 
 
-def download_video_thumbnail(url, extra_args=""):
-    # Uses yt-dlp's own thumbnail downloader, which works across whichever
-    # site yt-dlp is downloading from, rather than assuming a specific site's
-    # URL layout.
-    print("Fetching video thumbnail...")
+def download_video_thumbnail(url):
+    # Direct thumbnail fetch (no yt-dlp extraction needed) — this was the
+    # original working method. Currently recognizes the URL/video-ID
+    # pattern used by YouTube-style links; returns None for anything else,
+    # which is handled gracefully by the caller.
     try:
-        for f in glob.glob("thumb.*"):
-            os.remove(f)
-        cmd = (
-            f'yt-dlp -q --write-thumbnail --skip-download {extra_args} '
-            f'-o "thumb.%(ext)s" "{url}"'
-        )
-        subprocess.run(cmd, shell=True)
-        found = glob.glob("thumb.*")
-        if found:
-            print(f"Thumbnail saved: {found[0]}")
+        if "v=" in url:
+            video_id = url.split("v=")[1].split("&")[0]
+        elif "be/" in url:
+            video_id = url.split("be/")[1].split("?")[0]
+        elif "live/" in url:
+            video_id = url.split("live/")[1].split("?")[0]
         else:
-            print("No thumbnail available for this video (continuing without one).")
-        return found[0] if found else None
+            return None
+        thumb_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+        urllib.request.urlretrieve(thumb_url, "thumb.jpg")
+        return "thumb.jpg"
     except Exception:
-        print("Thumbnail fetch failed (continuing without one).")
         return None
 
 
@@ -128,7 +126,11 @@ def create_progress_bar(file_name, mode):
 
 
 async def main():
-    thumb_path = download_video_thumbnail(video_url, DOWNLOADER_EXTRA_ARGS)
+    thumb_path = download_video_thumbnail(video_url)
+    if thumb_path:
+        print(f"Thumbnail saved: {thumb_path}")
+    else:
+        print("No thumbnail available for this video (continuing without one).")
 
     print("Connecting to Telegram...")
     async with TelegramClient(StringSession(session_string), api_id, api_hash) as client:
@@ -141,6 +143,7 @@ async def main():
             out_template = f"%(title)s_{q}p.mp4"
             format_str = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]"
             print(f"\nRequesting quality <= {q}p...")
+
             os.system(
                 f'yt-dlp -q --progress -f "{format_str}" --merge-output-format mp4 '
                 f'{DOWNLOADER_EXTRA_ARGS} -o "{out_template}" "{video_url}"'
