@@ -5,7 +5,6 @@ import time
 import math
 import logging
 import subprocess
-import urllib.request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.types import (
@@ -23,7 +22,6 @@ api_id = int(os.environ["TELEGRAM_API_ID"])
 api_hash = os.environ["TELEGRAM_API_HASH"]
 session_string = os.environ["TELEGRAM_SESSION"]
 
-ALLOWED_QUALITIES = {360, 480, 720, 1080, 2160}
 _raw_qualities = os.environ.get("QUALITIES", "1080")
 qualities = []
 for part in _raw_qualities.split(","):
@@ -31,8 +29,8 @@ for part in _raw_qualities.split(","):
     if not part:
         continue
     q = int(part)
-    if q not in ALLOWED_QUALITIES:
-        raise ValueError(f"Unsupported quality '{q}'. Choose from {sorted(ALLOWED_QUALITIES)}.")
+    if q <= 0:
+        raise ValueError(f"Quality '{q}' must be a positive number.")
     qualities.append(q)
 if not qualities:
     raise ValueError("No valid qualities provided in QUALITIES.")
@@ -41,28 +39,29 @@ qualities = sorted(set(qualities))
 # Set MAX_SIZE_GB env var to "3.9" if you have Telegram Premium, else leave default 1.9
 MAX_SIZE_BYTES = float(os.environ.get("MAX_SIZE_GB", "1.9")) * 1024 * 1024 * 1024
 
-# Optional path to a cookies.txt file (Netscape format) to avoid YouTube's
-# "sign in to confirm you're not a bot" block on datacenter IPs.
-cookies_file = os.environ.get("YT_COOKIES_FILE", "")
-YTDLP_EXTRA_ARGS = ""
+# Optional path to a cookies.txt file (Netscape format) to help the
+# downloader access videos that require a signed-in session.
+cookies_file = os.environ.get("WEB_COOKIES_FILE", "")
+DOWNLOADER_EXTRA_ARGS = ""
 if cookies_file and os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 0:
-    YTDLP_EXTRA_ARGS += f' --cookies "{cookies_file}"'
-YTDLP_EXTRA_ARGS += " --js-runtimes deno --remote-components ejs:github"
+    DOWNLOADER_EXTRA_ARGS += f' --cookies "{cookies_file}"'
+DOWNLOADER_EXTRA_ARGS += " --js-runtimes deno --remote-components ejs:github"
 
 
-def download_youtube_thumbnail(url):
+def download_video_thumbnail(url, extra_args=""):
+    # Uses yt-dlp's own thumbnail downloader, which works across whichever
+    # site yt-dlp is downloading from, rather than assuming a specific site's
+    # URL layout.
     try:
-        if "v=" in url:
-            video_id = url.split("v=")[1].split("&")[0]
-        elif "be/" in url:
-            video_id = url.split("be/")[1].split("?")[0]
-        elif "live/" in url:
-            video_id = url.split("live/")[1].split("?")[0]
-        else:
-            return None
-        thumb_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-        urllib.request.urlretrieve(thumb_url, "thumb.jpg")
-        return "thumb.jpg"
+        for f in glob.glob("thumb.*"):
+            os.remove(f)
+        cmd = (
+            f'yt-dlp -q --write-thumbnail --skip-download {extra_args} '
+            f'-o "thumb.%(ext)s" "{url}"'
+        )
+        subprocess.run(cmd, shell=True)
+        found = glob.glob("thumb.*")
+        return found[0] if found else None
     except Exception:
         return None
 
@@ -123,7 +122,7 @@ def create_progress_bar(file_name, mode):
 
 
 async def main():
-    thumb_path = download_youtube_thumbnail(video_url)
+    thumb_path = download_video_thumbnail(video_url, DOWNLOADER_EXTRA_ARGS)
 
     print("Connecting to Telegram...")
     async with TelegramClient(StringSession(session_string), api_id, api_hash) as client:
@@ -136,7 +135,7 @@ async def main():
             format_str = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]"
             os.system(
                 f'yt-dlp -q --progress -f "{format_str}" --merge-output-format mp4 '
-                f'{YTDLP_EXTRA_ARGS} -o "{out_template}" "{video_url}"'
+                f'{DOWNLOADER_EXTRA_ARGS} -o "{out_template}" "{video_url}"'
             )
 
             found = glob.glob(f"*_{q}p.mp4")
